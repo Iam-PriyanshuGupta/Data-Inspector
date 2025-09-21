@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Inspector</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            --bg-color: #f8fafc; /* Slate 50 */
+            --panel-color: #ffffff; /* White */
+            --border-color: #e2e8f0; /* Slate 200 */
+            --text-primary: #1e293b; /* Slate 800 */
+            --text-secondary: #64748b; /* Slate 500 */
+            --accent-color: #6366f1; /* Indigo 500 */
+            --accent-hover: #4f46e5; /* Indigo 600 */
+            --danger-color: #ef4444; /* Red 500 */
+            --success-color: #22c55e; /* Green 500 */
+            --chart-grid-color: rgba(226, 232, 240, 0.7); /* Slate 200 with opacity */
+        }
+        .sidebar-item.active {
+            background-color: var(--accent-color);
+            color: #ffffff;
+            box-shadow: 0 4px 14px 0 rgba(99, 102, 241, 0.3);
+        }
+        .sidebar-item.active .sidebar-icon {
+            color: #ffffff;
+        }
+        .loader {
+            border: 4px solid var(--border-color);
+            border-top: 4px solid var(--accent-color);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+        /* Toast Notification */
+        #toast {
+            transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        /* For Correlation Heatmap */
+        .heatmap-cell {
+            padding: 0.5rem;
+            text-align: center;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .clean-btn {
+             background-color: #f1f5f9;
+             border: 1px solid #e2e8f0;
+             color: #334155;
+             padding: 0.5rem 0.75rem;
+             border-radius: 0.5rem;
+             font-size: 0.875rem;
+             font-weight: 500;
+             display: flex;
+             align-items: center;
+             gap: 0.5rem;
+             transition: all 0.2s;
+        }
+        .clean-btn:hover {
+            background-color: #e2e8f0;
+            border-color: #cbd5e1;
+        }
+         .clean-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body class="bg-[var(--bg-color)] text-[var(--text-primary)]">
+
+    <div id="app" class="flex h-screen">
+        <!-- Sidebar -->
+        <aside id="sidebar" class="w-72 bg-[var(--panel-color)] p-4 border-r border-[var(--border-color)] flex-shrink-0 hidden flex-col">
+            <div class="flex items-center gap-3 mb-6 px-2">
+                 <svg class="w-8 h-8 text-[var(--accent-color)]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><line x1="10" y1="9" x2="8" y2="9"></line></svg>
+                <h2 class="text-xl font-bold">Columns</h2>
+            </div>
+            <div id="column-list" class="space-y-2 overflow-y-auto pr-2 flex-1">
+                <!-- Column names will be injected here -->
+            </div>
+            <div class="pt-4 mt-4 border-t border-[var(--border-color)] space-y-2">
+                <button id="undo-btn" class="w-full bg-slate-100 border border-slate-300 text-slate-700 font-semibold py-2.5 px-4 rounded-lg hover:bg-slate-200 transition-colors flex items-center justify-center gap-2 shadow-sm text-sm disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-5-7.89"></path><path d="M21 12H9"></path><path d="M13 8l4 4-4 4"></path></svg>
+                    Undo Last Change
+                </button>
+                <button id="export-csv-btn" class="w-full bg-slate-100 border border-slate-300 text-slate-700 font-semibold py-2.5 px-4 rounded-lg hover:bg-slate-200 transition-colors flex items-center justify-center gap-2 shadow-sm text-sm">
+                    <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    Export to CSV
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 flex flex-col p-4 sm:p-6 lg:p-8 overflow-y-auto">
+            <!-- Upload Section -->
+            <section id="upload-section" class="flex-1 flex items-center justify-center">
+                <div class="w-full max-w-xl text-center">
+                     <div class="flex items-center justify-center gap-3 mb-4">
+                        <svg class="w-12 h-12 text-[var(--accent-color)]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+                        <h1 class="text-4xl font-bold">Data Inspector</h1>
+                    </div>
+                    <p class="text-[var(--text-secondary)] mb-8">An intelligent tool for dataset exploration and cleaning.</p>
+
+                    <div class="w-full bg-[var(--panel-color)] p-8 rounded-2xl border border-[var(--border-color)] shadow-lg shadow-slate-200/50">
+                        <label for="csv-file" class="group w-full h-48 border-2 border-dashed border-[var(--border-color)] rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-[var(--accent-color)] hover:bg-indigo-50 transition-all duration-300">
+                            <svg class="w-10 h-10 mb-3 text-slate-400 group-hover:text-[var(--accent-color)] transition-colors" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                            <p class="text-sm text-[var(--text-secondary)]">Click to upload or <span class="font-semibold text-[var(--accent-color)]">drag & drop</span></p>
+                            <input id="csv-file" type="file" class="hidden" accept=".csv" />
+                        </label>
+                        <div class="relative flex py-5 items-center">
+                            <div class="flex-grow border-t border-[var(--border-color)]"></div>
+                            <span class="flex-shrink mx-4 text-slate-400 text-xs uppercase font-semibold">OR</span>
+                            <div class="flex-grow border-t border-[var(--border-color)]"></div>
+                        </div>
+                        <div class="flex">
+                            <input type="url" id="csv-url" class="bg-slate-50 border border-slate-300 text-sm rounded-l-lg focus:ring-1 focus:ring-[var(--accent-color)] focus:border-[var(--accent-color)] block w-full p-2.5 outline-none" placeholder="Paste a direct CSV URL..." />
+                            <button id="fetch-url-button" class="bg-[var(--accent-color)] text-white font-semibold py-2 px-4 rounded-r-lg hover:bg-[var(--accent-hover)] transition-colors focus:ring-2 ring-offset-2 ring-indigo-400">Fetch</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Loading/Error Section -->
+            <section id="status-section" class="flex-1 flex-col items-center justify-center hidden">
+                <div id="loader" class="loader"></div>
+                <p id="status-message" class="mt-4 text-lg"></p>
+            </section>
+            
+            <!-- Analysis Panel -->
+            <section id="analysis-panel" class="hidden">
+                 <!-- Analysis details will be injected here -->
+            </section>
+
+            <footer class="text-center py-4 mt-auto">
+                <p class="text-xs text-slate-400">Created by Priyanshu Gupta</p>
+            </footer>
+            
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="unique-values-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden items-center justify-center p-4 transition-opacity duration-300 opacity-0">
+        <div id="modal-content" class="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col transition-all duration-300 scale-95 opacity-0">
+            <!-- Modal Content (Unique Values) -->
+        </div>
+    </div>
+     <div id="correlation-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden items-center justify-center p-4 transition-opacity duration-300 opacity-0">
+        <div id="correlation-modal-content" class="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col transition-all duration-300 scale-95 opacity-0">
+            <!-- Modal Content (Correlation Heatmap) -->
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-8 right-8 bg-[var(--text-primary)] text-white py-3 px-5 rounded-lg shadow-2xl flex items-center gap-3 transform translate-y-20 opacity-0">
+        <svg id="toast-icon" class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        <p id="toast-message"></p>
+    </div>
+
+    <!-- Core Libraries -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Main Application Logic -->
+    <script>
+        // Set Chart.js defaults
+        Chart.defaults.color = 'var(--text-secondary)';
+        Chart.defaults.font.family = "'Inter', sans-serif";
+        Chart.defaults.font.weight = '500';
+
+        // DOM Elements
+        const sidebar = document.getElementById('sidebar');
+        const columnList = document.getElementById('column-list');
+        const uploadSection = document.getElementById('upload-section');
+        const statusSection = document.getElementById('status-section');
+        const loader = document.getElementById('loader');
+        const statusMessage = document.getElementById('status-message');
+        const analysisPanel = document.getElementById('analysis-panel');
+        const fileInput = document.getElementById('csv-file');
+        const urlInput = document.getElementById('csv-url');
+        const fetchButton = document.getElementById('fetch-url-button');
+        const exportCsvBtn = document.getElementById('export-csv-btn');
+        const undoBtn = document.getElementById('undo-btn');
+        const toast = document.getElementById('toast');
+        const toastMessage = document.getElementById('toast-message');
+        const toastIcon = document.getElementById('toast-icon');
+
+        let chartInstance = null;
+        let currentData = null;
+        let currentFileName = 'data.csv';
+        let customChartInstance = null;
+        let toastTimeout;
+        let dataHistory = [];
+        let activeColumn = 'Overview';
+
+        // --- EVENT LISTENERS ---
+        fileInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                currentFileName = file.name;
+                handleFileUpload(file);
+            }
+        });
+        
+        urlInput.addEventListener('keyup', (event) => {
+            if (event.key === 'Enter') handleUrlFetch();
+        });
+
+        fetchButton.addEventListener('click', handleUrlFetch);
+        exportCsvBtn.addEventListener('click', handleExport);
+        undoBtn.addEventListener('click', handleUndo);
+        
+        // Drag and drop functionality
+        const dropZone = document.querySelector('label[for="csv-file"]');
+        
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false);
+        });
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.add('bg-indigo-50', 'border-[var(--accent-color)]'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.remove('bg-indigo-50', 'border-[var(--accent-color)]'), false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            const file = e.dataTransfer.files[0];
+             if (file) {
+                currentFileName = file.name;
+                handleFileUpload(file);
+            }
+        }, false);
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // --- STATE & CORE LOGIC ---
+        function saveState() {
+            const stateToSave = {
+                data: JSON.parse(JSON.stringify(currentData)),
+                columns: [...currentData.columns]
+            };
+            dataHistory.push(stateToSave);
+            updateUndoButton();
+        }
+
+        function handleUndo() {
+            if (dataHistory.length > 0) {
+                const lastState = dataHistory.pop();
+                currentData = lastState.data;
+                currentData.columns = lastState.columns;
+                showToast("Reverted last change.");
+                refreshUI();
+            }
+            updateUndoButton();
+        }
+        
+        function updateUndoButton() {
+            undoBtn.disabled = dataHistory.length === 0;
+        }
+        
+        function refreshUI() {
+            populateSidebar(currentData.columns);
+            if (activeColumn === 'Overview' || !currentData.columns.includes(activeColumn)) {
+                activeColumn = 'Overview';
+                displayOverview(currentData);
+            } else {
+                displayColumnAnalysis(activeColumn, currentData);
+            }
+            // Update active state in sidebar
+            document.querySelectorAll('.sidebar-item').forEach(item => {
+                item.classList.toggle('active', item.dataset.column === activeColumn);
+            });
+        }
+
+        function handleFileUpload(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => processCSV(e.target.result);
+            reader.onerror = () => showStatus('Error reading file.', true);
+            reader.readAsText(file);
+            showStatus('Parsing file...', false);
+        }
+
+        async function handleUrlFetch() {
+            const url = urlInput.value.trim();
+            if (!url) return;
+            showStatus('Fetching data...', false);
+            try {
+                // Use a CORS proxy for fetching from other domains
+                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+                const response = await fetch(proxyUrl);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const text = await response.text();
+                const urlPath = new URL(url).pathname.split('/');
+                currentFileName = urlPath[urlPath.length - 1] || 'data_from_url.csv';
+                processCSV(text);
+            } catch (error) {
+                console.error('Fetch Error:', error);
+                showStatus(`Failed to fetch from URL. Error: ${error.message}`, true);
+            }
+        }
+
+        function processCSV(csvString) {
+            try {
+                const data = d3.csvParse(csvString, d3.autoType);
+
+                if (!data || data.length === 0) {
+                    throw new Error("The CSV file is empty or could not be parsed correctly.");
+                }
+
+                currentData = data;
+                dataHistory = []; // Reset history for new data
+                updateUndoButton();
+                
+                statusSection.classList.add('hidden');
+                statusSection.classList.remove('flex');
+                uploadSection.classList.add('hidden'); // Hide upload section
+                sidebar.classList.remove('hidden');
+                sidebar.classList.add('flex');
+                analysisPanel.classList.remove('hidden');
+                analysisPanel.classList.add('fade-in');
+                
+                activeColumn = 'Overview';
+                populateSidebar(data.columns);
+                displayOverview(currentData);
+                document.querySelector('.sidebar-item[data-column="Overview"]')?.classList.add('active');
+            } catch (error) {
+                console.error("Data loading failed:", error);
+                showStatus(`Error: ${error.message}. Please check the file format or URL.`, true);
+            }
+        }
+        
+        function handleExport() {
+            if (!currentData) return;
+            const csvContent = d3.csvFormat(currentData);
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            const fileName = currentFileName.replace(/\.csv$/i, '') + '_processed.csv';
+            link.setAttribute("download", fileName);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // --- UI & NOTIFICATION ---
+        function showStatus(message, isError = false) {
+            uploadSection.classList.add('hidden');
+            analysisPanel.classList.add('hidden');
+            sidebar.classList.add('hidden');
+            statusSection.classList.remove('hidden');
+            statusSection.classList.add('flex');
+            
+            statusMessage.textContent = message;
+            loader.style.display = isError ? 'none' : 'block';
+            statusMessage.style.color = isError ? 'var(--danger-color)' : 'var(--text-primary)';
+        }
+        
+        function showToast(message, isSuccess = true) {
+            clearTimeout(toastTimeout);
+            toastMessage.textContent = message;
+            toast.style.backgroundColor = isSuccess ? 'var(--text-primary)' : 'var(--danger-color)';
+            toastIcon.innerHTML = isSuccess
+                ? `<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />`
+                : `<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />`;
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            toastTimeout = setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+        
+        // --- UI RENDERING ---
+         function populateSidebar(columns) {
+            columnList.innerHTML = '';
+            const overviewButton = createSidebarButton('Overview', 'M2.036 12.322a1.012 1.012 0 0 1 0-.639l4.433-7.447A1.012 1.012 0 0 1 7.447 4h9.106a1.012 1.012 0 0 1 .977.639l4.433 7.447a1.012 1.012 0 0 1 0 .639l-4.433 7.447A1.012 1.012 0 0 1 16.553 20H7.447a1.012 1.012 0 0 1-.977-.639L2.036 12.322Z', () => { activeColumn = 'Overview'; displayOverview(currentData); });
+            columnList.appendChild(overviewButton);
+
+            columns.forEach(col => {
+                const button = createSidebarButton(col, 'M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15', () => { activeColumn = col; displayColumnAnalysis(col, currentData); });
+                columnList.appendChild(button);
+            });
+        }
+        
+        function createSidebarButton(text, d, onClick) {
+            const button = document.createElement('button');
+            button.className = 'w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium sidebar-item transition-all duration-200 hover:bg-slate-100 flex items-center gap-3';
+            button.dataset.column = text;
+            button.innerHTML = `<svg class="w-5 h-5 text-slate-500 sidebar-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="${d}" /></svg><span class="truncate">${text}</span>`;
+            button.onclick = () => {
+                document.querySelectorAll('.sidebar-item').forEach(item => item.classList.remove('active'));
+                button.classList.add('active');
+                onClick();
+            };
+            return button;
+        }
+
+        function displayOverview(data) {
+            analysisPanel.innerHTML = '';
+            if (chartInstance) chartInstance.destroy();
+            if (customChartInstance) customChartInstance.destroy();
+
+            const previewData = data.slice(0, 10);
+            const { count: duplicateCount, percentage: duplicatePercentage } = findDuplicates(data);
+
+            analysisPanel.innerHTML = `
+                <div class="mb-6"><h2 class="text-3xl font-bold mb-1">Dataset Overview</h2><p class="text-[var(--text-secondary)]">A high-level summary and preview of your data.</p></div>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
+                    <div class="bg-white p-5 rounded-xl border flex items-center gap-4 shadow-sm"><div class="bg-indigo-100 p-3 rounded-full"><svg class="w-6 h-6 text-indigo-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg></div><div><p class="text-sm text-slate-500">Total Rows</p><p class="text-2xl font-semibold">${data.length.toLocaleString()}</p></div></div>
+                    <div class="bg-white p-5 rounded-xl border flex items-center gap-4 shadow-sm"><div class="bg-teal-100 p-3 rounded-full"><svg class="w-6 h-6 text-teal-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg></div><div><p class="text-sm text-slate-500">Total Columns</p><p class="text-2xl font-semibold">${data.columns.length.toLocaleString()}</p></div></div>
+                    <div class="bg-white p-5 rounded-xl border flex items-center gap-4 shadow-sm"><div class="bg-amber-100 p-3 rounded-full"><svg class="w-6 h-6 text-amber-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17.5V14l-3-3 4-4 4 4-3 3z"></path><path d="M12 2v2"></path><path d="M21.17 8.83l-1.41-1.41"></path><path d="M2.83 8.83l1.41-1.41"></path></svg></div><div><p class="text-sm text-slate-500">Duplicate Rows</p><p class="text-2xl font-semibold">${duplicateCount} <span class="text-base text-slate-400">(${duplicatePercentage}%)</span></p></div></div>
+                </div>
+                 <div class="mb-8">
+                    <h3 class="text-lg font-semibold mb-3">Cleaning & Analysis Tools</h3>
+                    <div class="bg-white p-6 rounded-lg border border-slate-200 shadow-sm space-y-4">
+                        <div class="flex flex-wrap gap-4 items-center justify-between">
+                             <div><h4 class="font-bold text-slate-800">Remove Duplicate Rows</h4><p class="text-sm text-slate-500 mt-1">Permanently delete rows that are exact copies of another.</p></div>
+                            <button onclick="handleRemoveDuplicates()" class="clean-btn">Find & Remove</button>
+                        </div>
+                        <div class="w-full h-[1px] bg-slate-200"></div>
+                        <div class="flex flex-wrap gap-4 items-center justify-between">
+                             <div><h4 class="font-bold text-slate-800">Correlation Analysis</h4><p class="text-sm text-slate-500 mt-1">Visualize the correlation between all numeric columns.</p></div>
+                            <button id="show-correlation-btn" class="clean-btn">Generate Heatmap</button>
+                        </div>
+                    </div>
+                </div>
+                 <div class="mb-8">
+                    <h3 class="text-lg font-semibold mb-3">Advanced Tools</h3>
+                    <div class="flex flex-wrap gap-4">
+                        <button id="toggle-chart-explorer" class="clean-btn"><svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3v18h18"></path><path stroke-linecap="round" stroke-linejoin="round" d="M18.7 8a6 6 0 0 0-8.4-8.4"></path><path stroke-linecap="round" stroke-linejoin="round" d="M11 17a3 3 0 0 0 3-3"></path></svg>Launch Chart Explorer</button>
+                        <button id="toggle-text-extractor" class="clean-btn"><svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.5 2H8.6c-.4 0-.8.2-1.1.5-.3.3-.5.7-.5 1.1v12.8c0 .4.2.8.5 1.1.3.3.7.5 1.1.5h10.8c.4 0 .8-.2 1.1-.5.3-.3.5-.7.5-1.1V6.5L15.5 2z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M15 2v5h5"></path><path stroke-linecap="round" stroke-linejoin="round" d="M10 16s.8-1 2-1 2 1 2 1"></path><path stroke-linecap="round" stroke-linejoin="round" d="M10 12s.8-1 2-1 2 1 2 1"></path></svg>Launch Text Extractor</button>
+                    </div>
+                    <div id="overview-tools-container" class="mt-4"></div>
+                </div>
+                <h3 class="text-lg font-semibold mb-3">Data Preview</h3>
+                <div class="overflow-x-auto bg-white rounded-xl border shadow-sm">
+                    <table class="min-w-full text-sm text-left"><thead class="bg-slate-50 border-b"><tr>${data.columns.map(c => `<th class="p-4 font-semibold text-slate-600">${c}</th>`).join('')}</tr></thead><tbody>${previewData.map((r,i) => `<tr class="${i%2===0?'bg-white':'bg-slate-50/50'}">${data.columns.map(c => `<td class="p-4 text-slate-500 truncate max-w-xs">${r[c]}</td>`).join('')}</tr>`).join('')}</tbody></table>
+                </div>
+            `;
+            
+            document.getElementById('show-correlation-btn').addEventListener('click', () => displayCorrelationHeatmap(data));
+            document.getElementById('toggle-chart-explorer').addEventListener('click', () => toggleTool('chart-explorer', data.columns));
+            document.getElementById('toggle-text-extractor').addEventListener('click', () => toggleTool('text-extractor', data.columns));
+        }
+
+        function displayColumnAnalysis(header, data) {
+            analysisPanel.innerHTML = '';
+            if (chartInstance) chartInstance.destroy();
+            if (customChartInstance) customChartInstance.destroy();
+
+            const values = data.map(d => d[header]).filter(v => v !== null && v !== undefined && v !== '');
+            const totalRows = data.length;
+            const missing = totalRows - values.length;
+            const isNumeric = values.every(v => typeof v === 'number');
+            const isText = !isNumeric && values.every(v => typeof v === 'string');
+
+            let statsHtml = `
+                <div class="mb-6"><h2 class="text-3xl font-bold mb-1">${header}</h2><p class="text-sm font-semibold tracking-widest uppercase ${isNumeric ? 'text-indigo-500' : 'text-teal-500'}">${isNumeric ? 'Numeric' : 'Categorical'}</p></div>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
+                    <div class="bg-white p-5 rounded-xl border flex items-center gap-4 shadow-sm"><div class="bg-indigo-100 p-3 rounded-full"><svg class="w-6 h-6 text-indigo-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg></div><div><p class="text-sm text-slate-500">Total Rows</p><p class="text-2xl font-semibold">${totalRows.toLocaleString()}</p></div></div>
+                    <div class="bg-white p-5 rounded-xl border flex items-center gap-4 shadow-sm"><div class="bg-amber-100 p-3 rounded-full"><svg class="w-6 h-6 text-amber-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 12H9m12 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"></path></svg></div><div><p class="text-sm text-slate-500">Missing</p><p class="text-2xl font-semibold">${missing.toLocaleString()} <span class="text-base text-slate-400">(${(missing/totalRows*100).toFixed(1)}%)</span></p></div></div>
+                    <div id="unique-values-trigger" class="bg-white p-5 rounded-xl border flex items-center gap-4 shadow-sm cursor-pointer hover:border-indigo-400 transition-all"><div class="bg-teal-100 p-3 rounded-full"><svg class="w-6 h-6 text-teal-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 16l-4-4 4-4"></path><path d="M8 16l4-4-4-4"></path></svg></div><div><p class="text-sm text-slate-500">Unique Values</p><p class="text-2xl font-semibold">${new Set(values).size.toLocaleString()}</p></div></div>
+                </div>`;
+
+            if (isNumeric && values.length > 0) {
+                 statsHtml += `<h3 class="text-lg font-semibold mb-3">Numeric Statistics</h3><div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                    <div class="bg-white p-4 rounded-lg border shadow-sm"><p class="text-sm text-slate-500">Mean</p><p class="text-xl font-semibold">${d3.mean(values).toFixed(2)}</p></div>
+                    <div class="bg-white p-4 rounded-lg border shadow-sm"><p class="text-sm text-slate-500">Median</p><p class="text-xl font-semibold">${d3.median(values).toFixed(2)}</p></div>
+                    <div class="bg-white p-4 rounded-lg border shadow-sm"><p class="text-sm text-slate-500">Min / Max</p><p class="text-xl font-semibold">${d3.min(values)} / ${d3.max(values)}</p></div>
+                    <div class="bg-white p-4 rounded-lg border shadow-sm"><p class="text-sm text-slate-500">Std. Dev.</p><p class="text-xl font-semibold">${d3.deviation(values).toFixed(2)}</p></div>
+                </div>`;
+            }
+
+            statsHtml += `
+                <div class="mb-8"><h3 class="text-lg font-semibold mb-3">Value Distribution</h3><div class="bg-white p-4 rounded-xl h-96 border shadow-sm"><canvas id="dist-chart"></canvas></div></div>
+                <div class="mb-8">
+                    <h3 class="text-lg font-semibold mb-3">Cleaning Workbench</h3>
+                    <div class="bg-white p-6 rounded-xl border shadow-sm space-y-6">
+                        <div><h4 class="font-semibold mb-2 text-slate-700">Value Replacement</h4><div class="flex flex-wrap gap-4 items-end"><div class="flex-1 min-w-[150px]"><label class="text-xs text-slate-500">Find Value</label><input type="text" id="find-value" class="w-full mt-1 bg-slate-50 border rounded p-2 text-sm"></div><div class="flex-1 min-w-[150px]"><label class="text-xs text-slate-500">Replace With</label><input type="text" id="replace-value" class="w-full mt-1 bg-slate-50 border rounded p-2 text-sm"></div><button id="replace-btn" class="bg-[var(--accent-color)] text-white font-semibold py-2 px-4 rounded-lg hover:bg-[var(--accent-hover)] transition-colors">Replace All</button></div></div>
+                        <div class="w-full h-[1px] bg-slate-200"></div>
+                        <div><h4 class="font-semibold mb-2 text-slate-700">Missing Values</h4><div class="flex flex-wrap gap-4 items-center"><p class="text-sm text-slate-500 flex-grow">Fill all ${missing} empty cells with:</p><div class="flex gap-2"><button id="fill-mean-btn" class="clean-btn" ${!isNumeric ? 'disabled' : ''}>Mean</button><button id="fill-median-btn" class="clean-btn" ${!isNumeric ? 'disabled' : ''}>Median</button><button id="fill-mode-btn" class="clean-btn">Mode</button></div></div></div>
+                        <div class="w-full h-[1px] bg-slate-200"></div>
+                        <div><h4 class="font-semibold mb-2 text-slate-700">Text Transformations</h4><div class="flex flex-wrap gap-2"><button id="case-upper-btn" class="clean-btn" ${!isText ? 'disabled' : ''}>To Uppercase</button><button id="case-lower-btn" class="clean-btn" ${!isText ? 'disabled' : ''}>To Lowercase</button><button id="trim-whitespace-btn" class="clean-btn" ${!isText ? 'disabled' : ''}>Trim Whitespace</button></div></div>
+                        <div class="w-full h-[1px] bg-slate-200"></div>
+                        <div><h4 class="font-semibold mb-2 text-slate-700">Type & Encoding</h4><div class="flex flex-wrap gap-2"><button id="type-text-btn" class="clean-btn">To Text</button><button id="type-number-btn" class="clean-btn">To Number</button><button id="label-encode-btn" class="clean-btn" ${!isText ? 'disabled' : ''}>Apply Label Encoding</button></div></div>
+                    </div>
+                </div>`;
+            
+            analysisPanel.innerHTML = statsHtml;
+            
+            createDistributionChart(values, isNumeric, 'dist-chart');
+
+            // Add event listeners
+            document.getElementById('unique-values-trigger').onclick = () => showUniqueValuesModal(header, [...new Set(values)]);
+            document.getElementById('replace-btn').onclick = () => handleFindReplace(header);
+            document.getElementById('fill-mode-btn').onclick = () => handleFillMissing(header, 'mode');
+            document.getElementById('type-text-btn').onclick = () => handleChangeType(header, 'text');
+            document.getElementById('type-number-btn').onclick = () => handleChangeType(header, 'number');
+            if(isNumeric) {
+                document.getElementById('fill-mean-btn').onclick = () => handleFillMissing(header, 'mean');
+                document.getElementById('fill-median-btn').onclick = () => handleFillMissing(header, 'median');
+            }
+            if(isText) {
+                document.getElementById('case-upper-btn').onclick = () => handleTextTransform(header, 'upper');
+                document.getElementById('case-lower-btn').onclick = () => handleTextTransform(header, 'lower');
+                document.getElementById('trim-whitespace-btn').onclick = () => handleTextTransform(header, 'trim');
+                document.getElementById('label-encode-btn').onclick = () => handleLabelEncoding(header);
+            }
+        }
+        
+        // --- DATA CLEANING HANDLERS ---
+        function handleRemoveDuplicates() {
+            saveState();
+            const originalCount = currentData.length;
+            const columns = currentData.columns; // Keep a reference to the columns
+            const seen = new Set();
+            
+            const newData = currentData.filter(row => {
+                const rowString = JSON.stringify(row);
+                if (seen.has(rowString)) return false;
+                seen.add(rowString);
+                return true;
+            });
+            newData.columns = columns; // Re-attach the columns property
+            currentData = newData;
+
+            const removedCount = originalCount - currentData.length;
+            showToast(`Removed ${removedCount} duplicate row(s).`);
+            refreshUI();
+        }
+        
+        function handleFindReplace(header) {
+            saveState();
+            const findValue = document.getElementById('find-value').value;
+            const replaceValue = document.getElementById('replace-value').value;
+            if(findValue === '') { showToast("'Find Value' cannot be empty.", false); return; }
+            const isNumericReplacement = !isNaN(replaceValue) && replaceValue.trim() !== '';
+            let replacedCount = 0;
+            currentData.forEach(row => {
+                if (String(row[header]) === findValue) {
+                    row[header] = isNumericReplacement ? +replaceValue : replaceValue;
+                    replacedCount++;
+                }
+            });
+            showToast(`Replaced ${replacedCount} instance(s).`);
+            refreshUI();
+        }
+        
+        function handleFillMissing(header, method) {
+            saveState();
+            const values = currentData.map(d => d[header]).filter(v => v != null && v !== '');
+            let fillValue;
+            if (method === 'mean') fillValue = d3.mean(values);
+            else if (method === 'median') fillValue = d3.median(values);
+            else {
+                const [mode] = d3.rollups(values, v => v.length, d => d).sort((a, b) => b[1] - a[1])[0] || [null];
+                fillValue = mode;
+            }
+            if (fillValue == null) { showToast("Could not calculate a value to fill.", false); return; }
+            let filledCount = 0;
+            const isNumericFill = typeof fillValue === 'number';
+            currentData.forEach(row => {
+                if (row[header] == null || row[header] === '') {
+                    row[header] = isNumericFill ? parseFloat(fillValue.toFixed(2)) : fillValue;
+                    filledCount++;
+                }
+            });
+            showToast(`Filled ${filledCount} missing value(s).`);
+            refreshUI();
+        }
+
+        function handleTextTransform(header, transformType) {
+            saveState();
+            let transformedCount = 0;
+            currentData.forEach(row => {
+                if (typeof row[header] === 'string') {
+                    let originalValue = row[header];
+                    if (transformType === 'upper') row[header] = row[header].toUpperCase();
+                    if (transformType === 'lower') row[header] = row[header].toLowerCase();
+                    if (transformType === 'trim') row[header] = row[header].trim();
+                    if (originalValue !== row[header]) transformedCount++;
+                }
+            });
+            showToast(`Transformed ${transformedCount} value(s).`);
+            refreshUI();
+        }
+
+        function handleChangeType(header, newType) {
+            saveState();
+            let changedCount = 0;
+            currentData.forEach(row => {
+                const originalValue = row[header];
+                if (newType === 'text' && typeof originalValue !== 'string') {
+                    row[header] = String(originalValue ?? '');
+                    changedCount++;
+                } else if (newType === 'number') {
+                    const num = parseFloat(originalValue);
+                    const newValue = isNaN(num) ? null : num;
+                    if (row[header] !== newValue) {
+                        row[header] = newValue;
+                        changedCount++;
+                    }
+                }
+            });
+            showToast(`Converted ${changedCount} value(s) to ${newType}.`);
+            refreshUI();
+        }
+
+        function handleLabelEncoding(header) {
+            saveState();
+            const uniqueValues = [...new Set(currentData.map(row => row[header]))];
+            const mapping = new Map(uniqueValues.map((value, index) => [value, index]));
+            
+            currentData.forEach(row => {
+                if (mapping.has(row[header])) {
+                    row[header] = mapping.get(row[header]);
+                }
+            });
+            showToast(`Applied label encoding. Mapped ${mapping.size} unique values.`);
+            refreshUI();
+        }
+
+        // --- ALL OTHER FUNCTIONS ---
+        function findDuplicates(data) {
+            const seen = new Set();
+            let duplicateCount = 0;
+            for (const row of data) {
+                const rowString = JSON.stringify(row);
+                if (seen.has(rowString)) {
+                    duplicateCount++;
+                } else {
+                    seen.add(rowString);
+                }
+            }
+            const percentage = data.length > 0 ? ((duplicateCount / data.length) * 100).toFixed(1) : 0;
+            return { count: duplicateCount, percentage };
+        }
+        
+        function calculateCorrelationMatrix(data) {
+            const numericColumns = data.columns.filter(col => data.every(d => typeof d[col] === 'number' || d[col] == null));
+            const matrix = {};
+            numericColumns.forEach(col1 => {
+                matrix[col1] = {};
+                numericColumns.forEach(col2 => {
+                    if (col1 === col2) { matrix[col1][col2] = 1.0; return; }
+                    if (matrix[col2] && matrix[col2][col1] !== undefined) { matrix[col1][col2] = matrix[col2][col1]; return; }
+                    let sum_X = 0, sum_Y = 0, sum_XY = 0, sum_X2 = 0, sum_Y2 = 0, n = 0;
+                    for (const row of data) {
+                        const x = row[col1];
+                        const y = row[col2];
+                        if (x != null && y != null) {
+                            sum_X += x; sum_Y += y; sum_XY += x * y; sum_X2 += x * x; sum_Y2 += y * y; n++;
+                        }
+                    }
+                    if (n < 2) { matrix[col1][col2] = NaN; return; }
+                    const num = n * sum_XY - sum_X * sum_Y;
+                    const den = Math.sqrt((n * sum_X2 - sum_X * sum_X) * (n * sum_Y2 - sum_Y * sum_Y));
+                    matrix[col1][col2] = den === 0 ? 0 : num / den;
+                });
+            });
+            return {matrix, columns: numericColumns};
+        }
+
+        function displayCorrelationHeatmap(data) {
+            const { matrix, columns } = calculateCorrelationMatrix(data);
+            if (columns.length < 2) { showToast("Not enough numeric columns for a correlation matrix.", false); return; }
+            const modalContent = document.getElementById('correlation-modal-content');
+            const colorScale = d3.scaleSequential(d3.interpolateRdBu).domain([1, -1]);
+            modalContent.innerHTML = `
+                <div class="p-4 border-b flex justify-between items-center"><h3 class="text-lg font-semibold">Correlation Heatmap</h3><div class="flex items-center gap-4"><button id="download-heatmap-btn" class="text-slate-500 hover:text-slate-800 transition-colors"><svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg></button><button id="close-correlation-modal" class="text-slate-400 hover:text-slate-600"><svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button></div></div>
+                <div class="p-4 overflow-auto" id="heatmap-render-area">
+                    <table class="min-w-full border-collapse">
+                        <thead><tr><th class="border-b border-r p-2 bg-slate-50"></th>${columns.map(c => `<th class="p-2 border-b text-xs font-semibold whitespace-nowrap -rotate-45">${c}</th>`).join('')}</tr></thead>
+                        <tbody>${columns.map(rowCol => `<tr><th class="border-r p-2 text-xs font-semibold whitespace-nowrap bg-slate-50 text-right">${rowCol}</th>${columns.map(colCol => `<td class="heatmap-cell" style="background-color: ${colorScale(matrix[rowCol][colCol])}; color: ${Math.abs(matrix[rowCol][colCol]) > 0.6 ? 'white' : 'black'}">${isNaN(matrix[rowCol][colCol]) ? 'N/A' : matrix[rowCol][colCol].toFixed(2)}</td>`).join('')}</tr>`).join('')}</tbody>
+                    </table>
+                </div>`;
+            openModal('correlation-modal');
+            document.getElementById('close-correlation-modal').addEventListener('click', () => closeModal('correlation-modal'));
+            document.getElementById('download-heatmap-btn').addEventListener('click', () => downloadHeatmap(matrix, columns, colorScale));
+        }
+
+        function downloadHeatmap(matrix, columns, colorScale) {
+            const cellSize = 60;
+            const headerSize = 100;
+            const padding = 10;
+            const fontSize = 12;
+            const canvas = document.createElement('canvas');
+            canvas.width = headerSize + columns.length * cellSize + padding * 2;
+            canvas.height = headerSize + columns.length * cellSize + padding * 2;
+            const ctx = canvas.getContext('2d');
+
+            // White background
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            ctx.font = `600 ${fontSize}px Inter, sans-serif`;
+
+            // Draw grid and text
+            columns.forEach((rowCol, i) => {
+                columns.forEach((colCol, j) => {
+                    const value = matrix[rowCol][colCol];
+                    const x = headerSize + j * cellSize + padding;
+                    const y = headerSize + i * cellSize + padding;
+                    
+                    ctx.fillStyle = isNaN(value) ? '#eeeeee' : colorScale(value);
+                    ctx.fillRect(x, y, cellSize, cellSize);
+
+                    ctx.fillStyle = isNaN(value) ? 'black' : (Math.abs(value) > 0.6 ? 'white' : 'black');
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(isNaN(value) ? 'N/A' : value.toFixed(2), x + cellSize / 2, y + cellSize / 2);
+                });
+            });
+
+            // Draw headers
+            ctx.fillStyle = 'black';
+            columns.forEach((col, i) => {
+                // Side headers
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(col, headerSize + padding - 10, headerSize + i * cellSize + cellSize / 2 + padding);
+
+                // Top headers (rotated)
+                ctx.save();
+                ctx.translate(headerSize + i * cellSize + cellSize / 2 + padding, headerSize + padding - 10);
+                ctx.rotate(-Math.PI / 4);
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(col, 0, 0);
+                ctx.restore();
+            });
+
+            // Trigger download
+            const link = document.createElement('a');
+            link.download = 'correlation_heatmap.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+            showToast('Heatmap download started.');
+        }
+        
+        function showUniqueValuesModal(columnName, uniqueValues) {
+            const modalContent = document.getElementById('modal-content');
+            modalContent.innerHTML = `
+                <div class="p-4 border-b flex justify-between items-center flex-shrink-0"><h3 class="text-lg font-semibold">Unique Values in "${columnName}"</h3><button id="close-unique-modal" class="text-slate-400 hover:text-slate-600"><svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button></div>
+                <div class="p-4 flex-shrink-0"><input type="text" id="modal-search" class="w-full bg-slate-50 border border-slate-300 rounded-md p-2 text-sm focus:ring-1 focus:ring-indigo-500 outline-none" placeholder="Search values..."></div>
+                <div id="modal-list-container" class="px-4 pb-4 overflow-y-auto"></div>`;
+            const listContainer = modalContent.querySelector('#modal-list-container');
+            const searchInput = modalContent.querySelector('#modal-search');
+            const renderModalList = (valuesToList) => {
+                if (valuesToList.length === 0) { listContainer.innerHTML = `<p class="text-sm text-slate-500 text-center py-4">No values found.</p>`; return; }
+                const listHtml = valuesToList.map(v => `<div class="text-sm text-slate-600 border-b last:border-b-0 p-2">${v || '(empty)'}</div>`).join('');
+                listContainer.innerHTML = `<div class="border rounded-md">${listHtml}</div>`;
+            };
+            renderModalList(uniqueValues);
+            openModal('unique-values-modal');
+            searchInput.addEventListener('input', (e) => {
+                const searchTerm = e.target.value.toLowerCase();
+                const filteredValues = uniqueValues.filter(v => String(v).toLowerCase().includes(searchTerm));
+                renderModalList(filteredValues);
+            });
+            document.getElementById('close-unique-modal').addEventListener('click', () => closeModal('unique-values-modal'));
+        }
+
+        function toggleTool(toolName, columns) {
+            const container = document.getElementById('overview-tools-container');
+            if (container.dataset.activeTool === toolName) {
+                container.innerHTML = '';
+                delete container.dataset.activeTool;
+                return;
+            }
+            container.dataset.activeTool = toolName;
+            let toolHtml = '';
+            if (toolName === 'chart-explorer') {
+                toolHtml = `<div class="p-4 bg-white rounded-xl border shadow-sm fade-in"><h3 class="text-xl font-bold mb-4">Custom Chart Explorer</h3><div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4"><div><label class="text-xs text-slate-500">Chart Type</label><select id="chart-type" class="w-full mt-1 bg-slate-50 border rounded p-2 text-sm"><option>Bar Chart</option><option>Scatter Plot</option><option>Line Chart</option><option>Pie Chart</option><option>Doughnut Chart</option></select></div><div><label class="text-xs text-slate-500">X-Axis / Labels</label><select id="x-axis-select" class="w-full mt-1 bg-slate-50 border rounded p-2 text-sm"></select></div><div><label class="text-xs text-slate-500">Y-Axis / Values</label><select id="y-axis-select" class="w-full mt-1 bg-slate-50 border rounded p-2 text-sm"></select></div><div class="flex items-end"><button id="plot-chart-btn" class="w-full bg-[var(--accent-color)] text-white font-semibold py-2 px-4 rounded-lg hover:bg-[var(--accent-hover)]">Plot</button></div></div><div class="h-96 relative"><canvas id="custom-chart-canvas"></canvas><p id="custom-chart-placeholder" class="absolute inset-0 flex items-center justify-center text-slate-400">Select axes and click Plot to generate a chart</p></div></div>`;
+            } else if (toolName === 'text-extractor') {
+                toolHtml = `<div class="p-4 bg-white rounded-xl border shadow-sm fade-in"><h3 class="text-xl font-bold mb-4">Text Extractor</h3><div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4"><div><label class="text-xs text-slate-500">Source Column</label><select id="extract-column-select" class="w-full mt-1 bg-slate-50 border rounded p-2 text-sm"></select></div><div><label class="text-xs text-slate-500">Separator</label><input type="text" id="extract-separator" class="w-full mt-1 bg-slate-50 border rounded p-2 text-sm" placeholder="e.g., space, comma..."></div><div><label class="text-xs text-slate-500">Segment (1-based)</label><input type="number" id="extract-index" value="1" min="1" class="w-full mt-1 bg-slate-50 border rounded p-2 text-sm"></div><div class="flex items-end"><button id="extract-text-btn" class="w-full bg-[var(--accent-color)] text-white font-semibold py-2 px-4 rounded-lg hover:bg-[var(--accent-hover)]">Extract</button></div></div><div class="border-t pt-4"><label class="text-xs text-slate-500">Results</label><textarea id="extracted-results" readonly class="w-full h-32 bg-slate-50 border rounded p-2 text-sm font-mono mt-1 resize-none"></textarea></div><div class="border-t pt-4 mt-4 flex flex-wrap gap-4 items-end"><div class="flex-1 min-w-[200px]"><label class="text-xs text-slate-500">New Column Name</label><input type="text" id="new-col-name" class="w-full mt-1 bg-slate-50 border rounded p-2 text-sm"></div><button id="add-col-btn" class="clean-btn bg-teal-500 text-white hover:bg-teal-600">Add as New Column</button></div></div>`;
+            }
+            container.innerHTML = toolHtml;
+
+            if (toolName === 'chart-explorer') {
+                const xSelect = document.getElementById('x-axis-select');
+                const ySelect = document.getElementById('y-axis-select');
+                columns.forEach(c => {
+                    xSelect.innerHTML += `<option value="${c}">${c}</option>`;
+                    ySelect.innerHTML += `<option value="${c}">${c}</option>`;
+                });
+                document.getElementById('plot-chart-btn').addEventListener('click', generateCustomChart);
+            } else if (toolName === 'text-extractor') {
+                const select = document.getElementById('extract-column-select');
+                columns.forEach(c => {
+                    select.innerHTML += `<option value="${c}">${c}</option>`;
+                });
+                document.getElementById('extract-text-btn').addEventListener('click', performTextExtraction);
+                document.getElementById('add-col-btn').addEventListener('click', handleAddColumnFromExtractor);
+            }
+        }
+
+        function generateCustomChart() {
+            if (customChartInstance) customChartInstance.destroy();
+            document.getElementById('custom-chart-placeholder').style.display = 'none';
+            const chartType = document.getElementById('chart-type').value;
+            const xCol = document.getElementById('x-axis-select').value;
+            const yCol = document.getElementById('y-axis-select').value;
+            let chartData, type, chartOptions = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, position: 'bottom' } }, scales: { y: { display: true, title: { display: true, text: yCol }, grid: { color: 'var(--chart-grid-color)' } }, x: { display: true, title: { display: true, text: xCol }, grid: { color: 'var(--chart-grid-color)' }, ticks: {} } } };
+            const filteredData = currentData.filter(d => d[xCol] != null && d[yCol] != null);
+            const pieColors = ['#818cf8', '#60a5fa', '#34d399', '#facc15', '#fb923c', '#f87171', '#c084fc'];
+
+            switch (chartType) {
+                case 'Scatter Plot':
+                    type = 'scatter';
+                    chartData = { datasets: [{ label: `${yCol} vs ${xCol}`, data: filteredData.map(d => ({ x: d[xCol], y: d[yCol] })), backgroundColor: 'rgba(99, 102, 241, 0.7)' }] };
+                    break;
+                case 'Line Chart':
+                    type = 'line';
+                    const sortedData = filteredData.sort((a, b) => a[xCol] - b[xCol]);
+                    chartData = { labels: sortedData.map(d => d[xCol]), datasets: [{ label: yCol, data: sortedData.map(d => d[yCol]), borderColor: 'var(--accent-color)', fill: false, tension: 0.1 }] };
+                    break;
+                case 'Pie Chart': case 'Doughnut Chart':
+                    type = chartType === 'Pie Chart' ? 'pie' : 'doughnut';
+                    const pieGroupedData = d3.rollup(filteredData, v => d3.sum(v, d => d[yCol]), d => d[xCol]);
+                    const pieSortedData = Array.from(pieGroupedData.entries()).sort((a,b) => b[1] - a[1]).slice(0, 7);
+                    chartData = { labels: pieSortedData.map(d => d[0]), datasets: [{ label: yCol, data: pieSortedData.map(d => d[1]), backgroundColor: pieColors, borderColor: '#ffffff', borderWidth: 2 }] };
+                    chartOptions.scales.x.display = false; chartOptions.scales.y.display = false;
+                    break;
+                case 'Bar Chart': default:
+                    type = 'bar';
+                    const groupedData = d3.rollup(filteredData, v => d3.mean(v, d => d[yCol]), d => d[xCol]);
+                    const sortedGroupedData = Array.from(groupedData.entries()).sort((a, b) => b[1] - a[1]).slice(0, 50);
+                    chartData = { labels: sortedGroupedData.map(d => d[0]), datasets: [{ label: `Average of ${yCol}`, data: sortedGroupedData.map(d => d[1]), backgroundColor: 'rgba(20, 184, 166, 0.7)' }] };
+                    chartOptions.scales.x.ticks.autoSkip = true; chartOptions.scales.x.ticks.maxTicksLimit = 20;
+                    break;
+            }
+            const ctx = document.getElementById('custom-chart-canvas').getContext('2d');
+            customChartInstance = new Chart(ctx, { type, data: chartData, options: chartOptions });
+        }
+        
+        function performTextExtraction() {
+            const column = document.getElementById('extract-column-select').value;
+            const separator = document.getElementById('extract-separator').value;
+            const index = parseInt(document.getElementById('extract-index').value, 10);
+            const resultsTextarea = document.getElementById('extracted-results');
+            if (!separator) { resultsTextarea.value = "Error: Please provide a separator."; return; }
+            if (isNaN(index) || index < 1) { resultsTextarea.value = "Error: Please provide a valid, positive segment number."; return; }
+            const extractedValues = currentData.map(row => {
+                const originalValue = row[column];
+                if (typeof originalValue !== 'string') return '';
+                const parts = originalValue.split(separator);
+                return parts[index - 1] || '';
+            });
+            resultsTextarea.value = extractedValues.join('\n');
+        }
+
+        function handleAddColumnFromExtractor() {
+            const newColName = document.getElementById('new-col-name').value.trim();
+            const valuesText = document.getElementById('extracted-results').value;
+            if (!newColName) { showToast("New column name cannot be empty.", false); return; }
+            if (currentData.columns.includes(newColName)) { showToast("That column name already exists.", false); return; }
+            if (!valuesText) { showToast("Extractor results are empty. Click 'Extract' first.", false); return; }
+            
+            saveState(); // Save state before modifying data
+
+            const values = valuesText.split('\n').map(v => !isNaN(v) && v.trim() !== '' ? +v : v);
+            if (values.length !== currentData.length) { showToast("Data length mismatch. This should not happen.", false); return; }
+
+            currentData.forEach((row, i) => { row[newColName] = values[i]; });
+            currentData.columns.push(newColName);
+
+            showToast(`New column '${newColName}' added successfully.`);
+            refreshUI();
+        }
+
+        function openModal(modalId) {
+            const modal = document.getElementById(modalId);
+            if (!modal) return;
+            const modalContent = modal.children[0];
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            setTimeout(() => {
+                modal.classList.remove('opacity-0');
+                if (modalContent) modalContent.classList.remove('scale-95', 'opacity-0');
+            }, 10);
+        }
+
+        function closeModal(modalId) {
+            const modal = document.getElementById(modalId);
+            if (!modal) return;
+            const modalContent = modal.children[0];
+            modal.classList.add('opacity-0');
+            if (modalContent) modalContent.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }, 300);
+        }
+
+        function createDistributionChart(values, isNumeric, canvasId) {
+            const ctx = document.getElementById(canvasId)?.getContext('2d');
+            if (!ctx) return;
+            let chartData;
+            if (isNumeric) {
+                const bins = d3.bin().thresholds(15)(values);
+                chartData = {
+                    labels: bins.map(bin => `${bin.x0.toFixed(1)}-${bin.x1.toFixed(1)}`),
+                    datasets: [{ label: 'Frequency', data: bins.map(bin => bin.length), backgroundColor: 'rgba(99, 102, 241, 0.7)', borderColor: 'var(--accent-color)', barPercentage: 1, categoryPercentage: 1 }]
+                };
+            } else {
+                const valueCounts = d3.rollup(values, v => v.length, d => d);
+                const sortedCounts = Array.from(valueCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 20);
+                chartData = {
+                    labels: sortedCounts.map(d => d[0]),
+                    datasets: [{ label: 'Count', data: sortedCounts.map(d => d[1]), backgroundColor: 'rgba(20, 184, 166, 0.7)', borderColor: '#0d9488' }]
+                };
+            }
+            if (chartInstance) chartInstance.destroy();
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: chartData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { title: { display: true, text: 'Frequency' }, grid: { color: 'var(--chart-grid-color)' } },
+                        x: { title: { display: true, text: 'Value Bins / Categories' }, grid: { display: false }, ticks: { autoSkip: true, maxTicksLimit: 15 } }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
+
+
