@@ -17,9 +17,18 @@ Just load your data, and start inspecting!
 ---
 
 ## 🖼️ Preview
-Here’s a quick look at the tool in action:  
 
-![Preview Screenshot](preview.png)  
+### 🔹 Overview Page
+![Overview Screenshot](images/preview1.png)
+
+### 🔹 Custom Chart Explorer
+![Custom Chart Screenshot](images/preview2.png)
+
+### 🔹 Column Overview
+![Column Overview Screenshot](images/preview3.png)
+
+### 🔹 Cleaning Tools
+![Cleaning Tools Screenshot](images/preview4.png) 
 
 ---
 
