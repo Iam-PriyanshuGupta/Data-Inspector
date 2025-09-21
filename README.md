@@ -12,7 +12,7 @@ Just load your data, and start inspecting!
 ---
 
 ## ✨ Live Demo
-👉 [Try it here](https://Iam-PriyanshuGupta/Data-Inspector/)
+👉 [Try it here](https://iam-priyanshugupta.github.io/Data-Inspector/)
 
 ---
 
